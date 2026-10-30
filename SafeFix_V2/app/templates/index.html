@@ -1,0 +1,1078 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SafeFix | PR-Fixer Agent</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            gh: {
+              bg: '#0d1117',
+              header: '#161b22',
+              border: '#30363d',
+              text: '#c9d1d9',
+              muted: '#8b949e',
+              addBg: 'rgba(46, 160, 67, 0.15)',
+              addText: '#3fb950',
+              addBorder: '#2ea043',
+              delBg: 'rgba(248, 81, 73, 0.15)',
+              delText: '#f85149',
+              delBorder: '#da3633',
+              hunkBg: 'rgba(56, 139, 253, 0.12)',
+              hunkText: '#79c0ff',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .gh-diff-table { border-collapse: collapse; width: 100%; font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; font-size: 12px; }
+    .gh-diff-table td { padding: 1px 6px; vertical-align: top; line-height: 19px; white-space: pre-wrap; word-break: break-all; }
+    .gh-line-num { width: 45px; min-width: 45px; text-align: right; user-select: none; color: #6e7681; font-size: 11px; padding-right: 8px !important; }
+    .gh-sign { width: 18px; min-width: 18px; text-align: center; user-select: none; }
+    .gh-del-row { background-color: rgba(248, 81, 73, 0.15); color: #ff7b72; }
+    .gh-del-row .gh-line-num { color: #f85149; background-color: rgba(248, 81, 73, 0.1); }
+    .gh-add-row { background-color: rgba(46, 160, 67, 0.15); color: #7ee787; }
+    .gh-add-row .gh-line-num { color: #3fb950; background-color: rgba(46, 160, 67, 0.1); }
+    .gh-hunk-row { background-color: rgba(56, 139, 253, 0.12); color: #79c0ff; font-weight: 500; }
+  </style>
+</head>
+<body class="bg-gh-bg text-gh-text min-h-screen flex flex-col font-sans antialiased selection:bg-emerald-500 selection:text-white">
+
+  <!-- Top GitHub-style Navigation Bar -->
+  <header class="border-b border-gh-border bg-gh-header sticky top-0 z-40 px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center space-x-3">
+      <div class="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center shadow">
+        <i class="fa-solid fa-code-pull-request text-white text-sm"></i>
+      </div>
+      <div>
+        <div class="flex items-center space-x-2">
+          <span class="font-bold text-sm tracking-tight text-white">SafeFix</span>
+          <span class="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">PR-Fixer</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Engine & API Privacy Settings -->
+    <div class="flex items-center space-x-3">
+      <div class="hidden sm:flex items-center space-x-2 bg-gh-bg border border-gh-border px-3 py-1 rounded-md text-xs">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span class="text-gh-muted">Engine:</span>
+        <span id="activeEngineLabel" class="font-mono text-emerald-400 font-semibold">Groq (qwen3.8-27b)</span>
+      </div>
+
+      <button onclick="openSettingsModal()" class="flex items-center space-x-1.5 bg-gh-bg hover:bg-gh-header border border-gh-border text-gh-muted hover:text-gh-text px-3 py-1.5 rounded-md text-xs transition">
+        <i class="fa-solid fa-lock text-emerald-400"></i>
+        <span>API Keys & Privacy</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="flex-1 max-w-6xl w-full mx-auto px-4 py-6 space-y-5">
+
+    <!-- Top Issue Controller & One-Click Demo Buttons -->
+    <section class="bg-gh-header border border-gh-border rounded-xl p-5 shadow space-y-4">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div>
+          <h1 class="text-base font-bold text-white flex items-center space-x-2">
+            <span>Fix GitHub Issue & Generate Pull Request</span>
+          </h1>
+          <p class="text-xs text-gh-muted mt-0.5">Click any live scenario below or paste your repository issue URL:</p>
+        </div>
+
+        <!-- 1-Click Interactive Demos (Auto Runs Fixer Immediately!) -->
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-xs text-gh-muted font-medium">1-Click Live Scenarios:</span>
+          <button onclick="runScenario('string-calculator-negatives')" class="scenario-btn px-3 py-1.5 rounded-md text-xs bg-gh-bg hover:bg-emerald-950/40 border border-gh-border hover:border-emerald-500/60 text-slate-200 transition flex items-center space-x-1.5">
+            <span class="w-2 h-2 rounded-full bg-red-400"></span>
+            <span>String Calculator</span>
+          </button>
+          <button onclick="runScenario('jwt-auth-expiration')" class="scenario-btn px-3 py-1.5 rounded-md text-xs bg-gh-bg hover:bg-emerald-950/40 border border-gh-border hover:border-emerald-500/60 text-slate-200 transition flex items-center space-x-1.5">
+            <span class="w-2 h-2 rounded-full bg-red-400"></span>
+            <span>JWT Leeway Bug</span>
+          </button>
+          <button onclick="runScenario('slug-unicode-generator')" class="scenario-btn px-3 py-1.5 rounded-md text-xs bg-gh-bg hover:bg-emerald-950/40 border border-gh-border hover:border-emerald-500/60 text-slate-200 transition flex items-center space-x-1.5">
+            <span class="w-2 h-2 rounded-full bg-red-400"></span>
+            <span>Unicode Slugifier</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Custom Input Bar -->
+      <form id="startJobForm" onsubmit="handleCustomSubmit(event)" class="flex flex-col sm:flex-row gap-2 pt-1">
+        <div class="flex-1 relative">
+          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gh-muted">
+            <i class="fa-brands fa-github text-sm"></i>
+          </div>
+          <input
+            type="text"
+            id="issueUrlInput"
+            placeholder="Paste GitHub Issue URL (e.g. https://github.com/owner/repo/issues/42)"
+            class="w-full bg-gh-bg border border-gh-border focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-gh-muted outline-none font-mono"
+          />
+        </div>
+        <button
+          type="submit"
+          id="launchBtn"
+          class="bg-emerald-600 hover:bg-emerald-500 text-white font-medium py-2 px-5 rounded-lg shadow text-xs flex items-center justify-center space-x-2 transition shrink-0"
+        >
+          <i class="fa-solid fa-wand-magic-sparkles text-xs"></i>
+          <span>Fix Issue & Show Changes</span>
+        </button>
+      </form>
+    </section>
+
+    <!-- Real-time Progress Bar (Only visible while agent runs) -->
+    <section id="progressSection" class="hidden bg-gh-header border border-gh-border rounded-xl p-4 shadow">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex items-center space-x-3 text-xs">
+          <div id="stepSpinner" class="w-6 h-6 rounded-full bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+            <i class="fa-solid fa-spinner fa-spin text-xs"></i>
+          </div>
+          <div>
+            <div id="statusTitle" class="font-bold text-white">Solving Issue...</div>
+            <div id="statusDetail" class="text-gh-muted text-[11px]">Running sandbox tests and computing code patch with Groq qwen3.8-27b</div>
+          </div>
+        </div>
+
+        <!-- Live Scorecard Indicator -->
+        <div class="flex items-center space-x-2 text-xs">
+          <span class="text-gh-muted">Test Status:</span>
+          <span id="scorecardBadge" class="font-mono text-[11px] px-2.5 py-0.5 rounded font-bold bg-yellow-500/10 text-yellow-400 border border-yellow-500/20">
+            Running...
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- THE "ASK BUTTON" REVIEW BANNER (Prominently shown when tests turn GREEN) -->
+    <section id="reviewGateBanner" class="hidden bg-emerald-950/40 border-2 border-emerald-500/60 rounded-xl p-5 shadow-2xl space-y-3">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div class="flex items-center space-x-2">
+            <span id="reviewGateBadge" class="px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center space-x-1.5">
+              <i class="fa-solid fa-circle-check text-emerald-400"></i>
+              <span>Tests Verified GREEN</span>
+            </span>
+            <span class="text-xs text-emerald-400 font-mono font-medium" id="reviewTestStatsText">All tests passed in sandbox (0 failures)</span>
+          </div>
+          <h2 id="reviewGateTitle" class="text-base font-bold text-white mt-1">Review the changes below before pushing to GitHub</h2>
+          <p id="reviewGateSubtext" class="text-xs text-gh-muted">SafeFix verified all tests pass. Click the button to approve and open the Pull Request.</p>
+        </div>
+
+        <!-- The Ask Buttons -->
+        <div class="flex items-center space-x-2 shrink-0">
+          <button onclick="approveChanges()" id="approveBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-5 py-2.5 rounded-lg shadow-lg shadow-emerald-600/30 text-xs flex items-center space-x-2 transition transform hover:-translate-y-0.5">
+            <i class="fa-solid fa-check"></i>
+            <span>Approve & Open GitHub PR</span>
+          </button>
+          <button onclick="openAdjustModal()" class="bg-gh-bg hover:bg-gh-border text-slate-300 border border-gh-border px-3 py-2.5 rounded-lg text-xs transition">
+            Request Changes
+          </button>
+          <a id="downloadDiffBtn" href="#" class="bg-gh-bg hover:bg-gh-border text-slate-300 border border-gh-border p-2.5 rounded-lg text-xs transition" title="Download Patch">
+            <i class="fa-solid fa-download"></i>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- PR Successfully Created Banner -->
+    <section id="prSuccessCard" class="hidden bg-emerald-950/30 border border-emerald-500/50 rounded-xl p-5 shadow-xl">
+      <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 text-lg">
+            <i class="fa-solid fa-code-pull-request"></i>
+          </div>
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Pull Request Live</span>
+              <span id="prBranchBadge" class="text-xs font-mono text-gh-muted"></span>
+            </div>
+            <h3 id="prTitleText" class="text-sm font-bold text-white mt-0.5"></h3>
+            <p id="prMessageText" class="text-xs text-gh-muted"></p>
+          </div>
+        </div>
+
+        <a id="viewPrLink" href="#" target="_blank" class="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-4 py-2 rounded-lg text-xs flex items-center space-x-1.5 transition shrink-0 shadow">
+          <span>View Pull Request on GitHub</span>
+          <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
+        </a>
+      </div>
+    </section>
+
+    <!-- Environment Setup Blocked Banner (Task 2 & 3: Never report env failure as source bug) -->
+    <section id="envFailedCard" class="hidden bg-red-950/40 border-2 border-red-500/60 rounded-xl p-5 shadow-2xl space-y-3">
+      <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+        <div class="flex items-start space-x-3">
+          <div class="w-9 h-9 rounded-lg bg-red-500/20 text-red-400 flex items-center justify-center shrink-0 text-base">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+          </div>
+          <div class="space-y-1">
+            <div class="flex items-center space-x-2">
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-red-500/20 text-red-300 border border-red-500/30 font-mono">ENVIRONMENT_FAILED</span>
+              <span class="text-xs text-red-400 font-semibold">Environment Setup Blocked</span>
+            </div>
+            <h3 id="envFailedReason" class="text-sm font-bold text-white">Environment could not be prepared automatically.</h3>
+            <pre id="envFailedDetail" class="text-[11px] text-slate-300 leading-relaxed font-mono whitespace-pre-wrap max-h-36 overflow-y-auto bg-black/60 p-2.5 rounded border border-gh-border mt-1"></pre>
+          </div>
+        </div>
+
+        <button onclick="retryCurrentSetup()" id="retrySetupBtn" class="px-3.5 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold text-xs flex items-center space-x-1.5 shrink-0 shadow transition">
+          <i class="fa-solid fa-rotate-right text-xs"></i>
+          <span>Retry Setup</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Baseline Not Reproduced Banner (Task 4: Never claim fix if baseline didn't fail) -->
+    <section id="baselineNotReproCard" class="hidden bg-amber-950/40 border-2 border-amber-500/60 rounded-xl p-5 shadow-2xl space-y-3">
+      <div class="flex items-start space-x-3">
+        <div class="w-9 h-9 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 text-base">
+          <i class="fa-solid fa-circle-question"></i>
+        </div>
+        <div class="flex-1 space-y-1">
+          <div class="flex items-center space-x-2">
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono">BASELINE_NOT_REPRODUCED</span>
+            <span class="text-xs text-amber-400 font-semibold">Issue Could Not Be Reproduced</span>
+          </div>
+          <h3 class="text-sm font-bold text-white">All baseline tests passed on recorded commit</h3>
+          <p class="text-xs text-gh-muted leading-relaxed">No test failures were detected for the reported issue. SafeFix halted to prevent applying speculative or unverified modifications.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- THE MAIN GITHUB CHANGES VIEW (FILES CHANGED TAB) -->
+    <section class="bg-gh-bg border border-gh-border rounded-xl shadow-xl overflow-hidden">
+      
+      <!-- GitHub PR Tab Header -->
+      <div class="border-b border-gh-border bg-gh-header px-5 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div class="flex items-center space-x-3">
+          <span class="text-xs font-bold text-white flex items-center space-x-2">
+            <i class="fa-solid fa-file-lines text-gh-muted"></i>
+            <span>Pull Request Changes</span>
+          </span>
+          <span id="diffFilesCountBadge" class="text-[11px] font-mono px-2 py-0.5 rounded bg-gh-bg border border-gh-border text-slate-300">1 file changed</span>
+        </div>
+
+        <div class="flex items-center space-x-3 text-xs">
+          <!-- Additions / Deletions Badge -->
+          <div id="diffAddDelBadge" class="font-mono text-xs flex items-center space-x-2">
+            <span id="diffAdditions" class="text-emerald-400 font-bold">+0</span>
+            <span id="diffDeletions" class="text-red-400 font-bold">-0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Problem Explanation Box -->
+      <div id="issueSummaryBox" class="px-5 py-3 bg-gh-header/40 border-b border-gh-border text-xs flex items-start space-x-2 text-gh-text">
+        <i class="fa-solid fa-circle-info text-blue-400 mt-0.5 shrink-0"></i>
+        <div id="issueSummaryText" class="leading-relaxed">
+          Select a scenario above to immediately see the GitHub changes view and run the test-fix verification.
+        </div>
+      </div>
+
+      <!-- GitHub Changes Diff Container -->
+      <div id="diffContainer" class="p-4 space-y-4">
+        <!-- Rendered GitHub Diff Cards will be injected here dynamically -->
+        <div id="diffCardsWrapper" class="space-y-4"></div>
+      </div>
+
+      <!-- Collapsible Raw Test Output (Closed by default so UI is never cluttered) -->
+      <div class="border-t border-gh-border px-5 py-2.5 bg-gh-header/30">
+        <details class="text-xs text-gh-muted">
+          <summary class="cursor-pointer hover:text-gh-text select-none flex items-center space-x-1.5 font-medium">
+            <i class="fa-solid fa-terminal text-[10px]"></i>
+            <span>View raw sandbox test output (debug log)</span>
+          </summary>
+          <pre id="rawTerminalOutput" class="mt-2.5 p-3 rounded-lg bg-black border border-gh-border text-[11px] text-slate-300 font-mono whitespace-pre-wrap max-h-56 overflow-y-auto">// Test execution output will stream here...</pre>
+        </details>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Settings & API Keys Privacy Modal -->
+  <div id="settingsModal" class="hidden fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-gh-header border border-gh-border rounded-xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-gh-border pb-3">
+        <div class="flex items-center space-x-2">
+          <i class="fa-solid fa-lock text-emerald-400"></i>
+          <h3 class="font-bold text-sm text-white">API Keys & Privacy</h3>
+        </div>
+        <button onclick="closeSettingsModal()" class="text-gh-muted hover:text-white">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 leading-relaxed">
+        <strong>Credential handling:</strong> Entered keys stay in this page's memory until you reload it. They are sent to your local SafeFix backend for API calls. Use only on a trusted local machine; do not expose this server publicly without authentication and HTTPS.
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block font-medium text-slate-300 mb-1">Engine Provider</label>
+          <select id="settingProvider" onchange="toggleProviderSettings()" class="w-full bg-gh-bg border border-gh-border rounded-lg p-2 text-slate-200 outline-none">
+            <option value="groq">Groq (qwen/qwen3.8-27b - Ultra Fast Test Loops)</option>
+            <option value="nemotron">NVIDIA Token Factory / Nemotron (Official NIM Endpoint)</option>
+          </select>
+        </div>
+
+        <div id="groqSettingsGroup">
+          <label class="block font-medium text-slate-300 mb-1">Groq API Key</label>
+          <input type="password" id="settingGroqKey" class="w-full bg-gh-bg border border-gh-border rounded-lg p-2 text-slate-200 font-mono outline-none">
+          <p class="text-[10px] text-gh-muted mt-1">Configured for enabled model: <span class="font-mono text-emerald-400">qwen/qwen3.8-27b</span></p>
+        </div>
+
+        <div id="nemotronSettingsGroup" class="hidden space-y-3">
+          <div>
+            <label class="block font-medium text-slate-300 mb-1">NVIDIA Token Factory / Nemotron API Key</label>
+            <input type="password" id="settingNvidiaKey" placeholder="nvapi-..." class="w-full bg-gh-bg border border-gh-border rounded-lg p-2 text-slate-200 font-mono outline-none">
+            <p class="text-[10px] text-gh-muted mt-1">Direct endpoint: <span class="font-mono">https://integrate.api.nvidia.com/v1</span></p>
+          </div>
+          <div>
+            <label class="block font-medium text-slate-300 mb-1">Model Name</label>
+            <input type="text" id="settingNemotronModel" value="nvidia/llama-3.1-nemotron-70b-instruct" class="w-full bg-gh-bg border border-gh-border rounded-lg p-2 text-slate-200 font-mono outline-none">
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-medium text-slate-300 mb-1">GitHub Personal Access Token (Optional)</label>
+          <input type="password" id="settingGithubToken" placeholder="ghp_... (needed only to push live PRs to GitHub)" class="w-full bg-gh-bg border border-gh-border rounded-lg p-2 text-slate-200 font-mono outline-none">
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end space-x-2 pt-3 border-t border-gh-border">
+        <button onclick="closeSettingsModal()" class="px-3 py-1.5 rounded-lg bg-gh-bg text-slate-300 text-xs">Cancel</button>
+        <button onclick="saveSettings()" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold">Save Locally</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Adjustment Modal -->
+  <div id="adjustModal" class="hidden fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-gh-header border border-gh-border rounded-xl max-w-md w-full p-5 shadow-2xl space-y-3">
+      <div class="flex items-center justify-between border-b border-gh-border pb-2">
+        <h3 class="font-bold text-sm text-white">Request Changes</h3>
+        <button onclick="closeAdjustModal()" class="text-gh-muted hover:text-white">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div>
+        <label class="block text-xs font-medium text-slate-300 mb-1">Feedback for the agent:</label>
+        <textarea id="adjustFeedbackInput" rows="3" placeholder="e.g. Please add a docstring and keep existing comments..." class="w-full bg-gh-bg border border-gh-border rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"></textarea>
+      </div>
+
+      <div class="flex items-center justify-end space-x-2 pt-1">
+        <button onclick="closeAdjustModal()" class="px-3 py-1.5 rounded-lg bg-gh-bg text-slate-300 text-xs">Cancel</button>
+        <button onclick="submitAdjustment()" class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold">Regenerate Fix</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Client-side Logic -->
+  <script>
+    let currentSessionId = null;
+    let ws = null;
+    let pollingTimer = null;
+
+    // Default Pre-loaded Scenarios
+    const DEMO_SCENARIOS = {
+      'string-calculator-negatives': {
+        url: 'https://github.com/safefix-demo/string-calculator/issues/42',
+        title: 'Fix: Negatives not allowed should report all negative numbers in exception',
+        summary: 'StringCalculator add() only catches the first negative number instead of collecting all negative numbers into "negatives not allowed: X, Y".'
+      },
+      'jwt-auth-expiration': {
+        url: 'https://github.com/safefix-demo/jwt-auth-service/issues/88',
+        title: 'Bug: Token expiry calculation fails on leeway comparison',
+        summary: 'In auth_validator.py, leeway window was prematurely expiring valid tokens due to improper timestamp subtraction.'
+      },
+      'slug-unicode-generator': {
+        url: 'https://github.com/safefix-demo/slug-generator/issues/15',
+        title: 'Unicode characters cause slug generator to produce empty or truncated slugs',
+        summary: 'Accented unicode characters like Café were stripped instead of decomposed with unicodedata NFKD normalization.'
+      }
+    };
+
+    window.addEventListener('DOMContentLoaded', () => {
+      // Purge credentials persisted by earlier SafeFix versions.
+      ['safefix_groq_key', 'safefix_nvidia_key', 'safefix_github_token'].forEach(k => localStorage.removeItem(k));
+      const savedProvider = 'groq';
+      const groqKey = '';
+      const nvidiaKey = '';
+      const ghToken = '';
+
+      document.getElementById('settingProvider').value = savedProvider;
+      document.getElementById('settingGroqKey').value = groqKey;
+      document.getElementById('settingNvidiaKey').value = nvidiaKey;
+      document.getElementById('settingGithubToken').value = ghToken;
+
+      updateEngineLabel(savedProvider);
+      toggleProviderSettings();
+    });
+
+    function updateEngineLabel(provider) {
+      const label = document.getElementById('activeEngineLabel');
+      if (provider === 'nemotron') {
+        label.textContent = "Token Factory (Nemotron 70B)";
+        label.className = "font-mono text-teal-400 font-semibold";
+      } else {
+        label.textContent = "Groq (qwen3.8-27b)";
+        label.className = "font-mono text-emerald-400 font-semibold";
+      }
+    }
+
+    function toggleProviderSettings() {
+      const p = document.getElementById('settingProvider').value;
+      if (p === 'nemotron') {
+        document.getElementById('groqSettingsGroup').classList.add('hidden');
+        document.getElementById('nemotronSettingsGroup').classList.remove('hidden');
+      } else {
+        document.getElementById('groqSettingsGroup').classList.remove('hidden');
+        document.getElementById('nemotronSettingsGroup').classList.add('hidden');
+      }
+    }
+
+    function openSettingsModal() { document.getElementById('settingsModal').classList.remove('hidden'); }
+    function closeSettingsModal() { document.getElementById('settingsModal').classList.add('hidden'); }
+    function openAdjustModal() { document.getElementById('adjustModal').classList.remove('hidden'); }
+    function closeAdjustModal() { document.getElementById('adjustModal').classList.add('hidden'); }
+
+    function saveSettings() {
+      const provider = document.getElementById('settingProvider').value;
+      updateEngineLabel(provider);
+      closeSettingsModal();
+    }
+
+    // 1-Click: Runs scenario immediately and renders the GitHub Changes View!
+    async function runScenario(scenarioId) {
+      const demo = DEMO_SCENARIOS[scenarioId];
+      if (!demo) return;
+
+      document.getElementById('issueUrlInput').value = demo.url;
+      document.getElementById('issueSummaryText').textContent = demo.summary;
+
+      await startFixJob({
+        demo_id: scenarioId,
+        issue_url: demo.url
+      });
+    }
+
+    async function handleCustomSubmit(e) {
+      e.preventDefault();
+      const issueUrl = document.getElementById('issueUrlInput').value.trim();
+      if (!issueUrl) return;
+
+      await startFixJob({
+        issue_url: issueUrl
+      });
+    }
+
+    async function startFixJob(payloadDetails) {
+      // 1. Immediately terminate and clean up previous connections
+      if (ws) {
+        try { ws.close(); } catch(e) {}
+        ws = null;
+      }
+      if (pollingTimer) {
+        clearInterval(pollingTimer);
+        pollingTimer = null;
+      }
+      currentSessionId = null;
+
+      // 2. Reset banners & contradictory cards
+      document.getElementById('reviewGateBanner').classList.add('hidden');
+      document.getElementById('prSuccessCard').classList.add('hidden');
+      document.getElementById('envFailedCard').classList.add('hidden');
+      document.getElementById('baselineNotReproCard').classList.add('hidden');
+
+      // 3. Reset scorecard and terminal log
+      document.getElementById('scorecardBadge').className = "font-mono text-[11px] px-2.5 py-0.5 rounded font-bold bg-yellow-500/10 text-yellow-400 border border-yellow-500/20";
+      document.getElementById('scorecardBadge').textContent = "Initializing...";
+      document.getElementById('rawTerminalOutput').textContent = "// Sandbox execution output will stream here...";
+
+      // 4. Reset problem explanation & diff placeholder
+      if (payloadDetails.demo_id) {
+        const demo = DEMO_SCENARIOS[payloadDetails.demo_id];
+        document.getElementById('issueSummaryText').textContent = demo ? demo.summary : 'Loading demo scenario...';
+      } else {
+        document.getElementById('issueSummaryText').textContent = "Ingesting issue details from GitHub...";
+      }
+
+      const wrapper = document.getElementById('diffCardsWrapper');
+      wrapper.innerHTML = `
+        <div class="p-8 text-center border border-dashed border-gh-border rounded-lg bg-gh-header/20">
+          <div class="inline-flex items-center justify-center w-10 h-10 rounded-full bg-emerald-500/10 text-emerald-400 mb-3 animate-pulse">
+            <i class="fa-solid fa-code text-base"></i>
+          </div>
+          <div class="text-xs font-semibold text-white">Analyzing issue & generating code diff...</div>
+          <div class="text-[11px] text-gh-muted mt-1">SafeFix is diagnosing the root cause and running sandbox tests. Changes will appear here automatically.</div>
+        </div>
+      `;
+      document.getElementById('diffFilesCountBadge').textContent = "Preparing diff...";
+      document.getElementById('diffAdditions').textContent = "+0";
+      document.getElementById('diffDeletions').textContent = "-0";
+
+      // 5. Show progress section
+      document.getElementById('progressSection').classList.remove('hidden');
+      document.getElementById('statusTitle').textContent = "1/15. Ingesting Repository Context";
+      document.getElementById('statusDetail').textContent = "Parsing issue metadata and establishing isolated sandbox";
+
+      const provider = document.getElementById('settingProvider').value || 'groq';
+      const apiKey = provider === 'nemotron' ? document.getElementById('settingNvidiaKey').value.trim() : document.getElementById('settingGroqKey').value.trim();
+      const ghToken = document.getElementById('settingGithubToken').value.trim();
+
+      const payload = {
+        ...payloadDetails,
+        provider: provider,
+        api_key: apiKey,
+        github_token: ghToken
+      };
+
+      try {
+        const res = await fetch('/api/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Failed to start fix agent');
+
+        currentSessionId = data.session_id;
+        document.getElementById('downloadDiffBtn').href = `/api/diff/${currentSessionId}/download`;
+
+        // Connect WebSocket AND start Active Polling Fallback (dual guarantee)
+        connectWebSocket(data.session_id);
+        startPolling(data.session_id);
+      } catch (err) {
+        alert("Error starting SafeFix: " + err.message);
+        document.getElementById('progressSection').classList.add('hidden');
+      }
+    }
+
+    function startPolling(sessionId) {
+      const TERMINAL_STATES = ['COMPLETED', 'ENVIRONMENT_FAILED', 'BASELINE_NOT_REPRODUCED', 'REPAIR_FAILED', 'APPROVAL_REJECTED', 'ERROR'];
+      const pollSessionId = sessionId;
+      pollingTimer = setInterval(async () => {
+        // Discard polling tick if user switched to another session
+        if (pollSessionId !== currentSessionId) {
+          clearInterval(pollingTimer);
+          return;
+        }
+        try {
+          const res = await fetch(`/api/session/${pollSessionId}`);
+          if (!res.ok) return;
+          if (pollSessionId !== currentSessionId) return;
+          const session = await res.json();
+          if (session.session_id !== currentSessionId) return;
+          processSessionUpdate(session);
+
+          if (TERMINAL_STATES.includes(session.state)) {
+            clearInterval(pollingTimer);
+            pollingTimer = null;
+          }
+        } catch (e) {
+          // ignore transient poll error
+        }
+      }, 500);
+    }
+
+    function connectWebSocket(sessionId) {
+      if (ws) {
+        try { ws.close(); } catch(e) {}
+        ws = null;
+      }
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws/${sessionId}`;
+
+      const socket = new WebSocket(wsUrl);
+      ws = socket;
+
+      socket.onmessage = (event) => {
+        try {
+          // Drop stale socket messages if user started a new session
+          if (socket !== ws || sessionId !== currentSessionId) {
+            return;
+          }
+          const msg = JSON.parse(event.data);
+          if (msg.session_id && msg.session_id !== currentSessionId) {
+            return;
+          }
+          handleAgentEvent(msg);
+        } catch (e) {}
+      };
+    }
+
+    function handleAgentEvent(msg) {
+      const { event, state, data } = msg;
+
+      if (event === 'initial_state' && data) {
+        processSessionUpdate({
+          session_id: msg.session_id || currentSessionId,
+          state: state || (data && data.state),
+          ...data
+        });
+        return;
+      }
+
+      if (event === 'issue_loaded' && data && data.issue) {
+        if (data.issue.title) {
+          document.getElementById('issueSummaryText').textContent = data.issue.title;
+        }
+      } else if (event === 'state_change') {
+        updateProgressStatus(state, data ? data.message : '');
+        if (['ENVIRONMENT_FAILED', 'ERROR', 'BASELINE_NOT_REPRODUCED', 'REPAIR_FAILED', 'APPROVAL_REJECTED'].includes(state)) {
+          processSessionUpdate({
+            session_id: msg.session_id || currentSessionId,
+            state: state,
+            blocked_reason: data ? data.message : ''
+          });
+        }
+      } else if (event === 'terminal_output') {
+        appendRawTerminal(data);
+        if (data.status_label || data.is_green !== undefined) {
+          updateScorecard(data);
+        }
+      } else if (event === 'plan_ready' && data.plan) {
+        if (data.plan.root_cause) {
+          document.getElementById('issueSummaryText').textContent = data.plan.root_cause;
+        }
+      } else if (event === 'diff_ready' && data.diff) {
+        renderGitHubDiffView(data.diff);
+      } else if (event === 'review_required') {
+        showReviewGate(data);
+        if (data.diff) renderGitHubDiffView(data.diff);
+      } else if (event === 'pr_created') {
+        showPRSuccess(data.pr);
+      }
+    }
+
+    function processSessionUpdate(session) {
+      updateProgressStatus(session.state, session.blocked_reason);
+
+      if (session.issue && session.issue.title && (!session.plan || !session.plan.root_cause)) {
+        document.getElementById('issueSummaryText').textContent = session.issue.title;
+      }
+
+      if (session.plan && session.plan.root_cause) {
+        document.getElementById('issueSummaryText').textContent = session.plan.root_cause;
+      }
+
+      if (session.current_test) {
+        updateScorecard(session.current_test);
+      }
+
+      if (session.diff && session.diff.diff_text) {
+        renderGitHubDiffView(session.diff);
+      }
+
+      if (session.state === 'ENVIRONMENT_FAILED' || session.state === 'ERROR') {
+        document.getElementById('progressSection').classList.add('hidden');
+        document.getElementById('reviewGateBanner').classList.add('hidden');
+        document.getElementById('baselineNotReproCard').classList.add('hidden');
+        const envCard = document.getElementById('envFailedCard');
+        envCard.classList.remove('hidden');
+
+        const errTitle = session.state === 'ENVIRONMENT_FAILED' ? 'Environment Setup Blocked' : 'Execution Error';
+        document.getElementById('envFailedReason').textContent = session.blocked_reason || errTitle;
+
+        // Show failing log details in card
+        let errLogText = "";
+        if (session.logs && session.logs.length > 0) {
+          const errs = session.logs.filter(l => l.level === 'error');
+          if (errs.length > 0) {
+            errLogText = errs.map(e => e.text).join('\n');
+          }
+        }
+        document.getElementById('envFailedDetail').textContent = errLogText || session.blocked_reason || "Check sandbox terminal logs below for full output.";
+
+        // Requirement G: Never show "Preparing diff..." after failure
+        document.getElementById('diffFilesCountBadge').textContent = session.state === 'ENVIRONMENT_FAILED' ? "Setup Failed" : "Execution Failed";
+        document.getElementById('diffCardsWrapper').innerHTML = `
+          <div class="p-8 text-center border border-red-500/30 rounded-lg bg-red-950/20">
+            <i class="fa-solid fa-triangle-exclamation text-red-400 text-2xl mb-2"></i>
+            <div class="text-xs font-bold text-white">Execution Halted: ${escapeHtml(session.state === 'ENVIRONMENT_FAILED' ? 'Environment Setup Blocked' : 'Execution Error')}</div>
+            <div class="text-[11px] text-gh-muted mt-1 max-w-md mx-auto">${escapeHtml(session.blocked_reason || 'Dependencies could not be resolved. SafeFix halted to prevent unverified changes.')}</div>
+          </div>
+        `;
+
+        const badge = document.getElementById('scorecardBadge');
+        badge.className = "font-mono text-[11px] px-2.5 py-0.5 rounded font-bold bg-red-500/20 text-red-400 border border-red-500/40";
+        badge.innerHTML = `<i class="fa-solid fa-xmark mr-1"></i> ${session.state === 'ENVIRONMENT_FAILED' ? 'Setup Blocked' : 'Error'}`;
+      } else if (session.state === 'BASELINE_NOT_REPRODUCED') {
+        document.getElementById('progressSection').classList.add('hidden');
+        document.getElementById('reviewGateBanner').classList.add('hidden');
+        document.getElementById('envFailedCard').classList.add('hidden');
+        document.getElementById('baselineNotReproCard').classList.remove('hidden');
+        document.getElementById('diffFilesCountBadge').textContent = "Baseline Clean";
+        document.getElementById('diffCardsWrapper').innerHTML = `
+          <div class="p-8 text-center border border-amber-500/30 rounded-lg bg-amber-950/20">
+            <i class="fa-solid fa-circle-check text-amber-400 text-2xl mb-2"></i>
+            <div class="text-xs font-bold text-white">Baseline Tests Passed Cleanly</div>
+            <div class="text-[11px] text-gh-muted mt-1 max-w-md mx-auto">The reported issue could not be reproduced on this commit. No modifications will be made.</div>
+          </div>
+        `;
+        const badge = document.getElementById('scorecardBadge');
+        badge.className = "font-mono text-[11px] px-2.5 py-0.5 rounded font-bold bg-amber-500/20 text-amber-400 border border-amber-500/40";
+        badge.innerHTML = `<i class="fa-solid fa-circle-question mr-1"></i> Not Reproduced`;
+      } else if (session.state === 'WAITING_FOR_APPROVAL' || session.state === 'WAITING_FOR_REVIEW') {
+        document.getElementById('progressSection').classList.add('hidden');
+        document.getElementById('envFailedCard').classList.add('hidden');
+        document.getElementById('baselineNotReproCard').classList.add('hidden');
+        const isActuallyGreen = session.current_test 
+          ? (Boolean(session.current_test.is_green) && session.current_test.failed_count === 0 && (session.current_test.passed_count > 0 || session.current_test.tests_run > 0))
+          : false;
+
+        showReviewGate({
+          diff: session.diff,
+          iterations: session.iterations,
+          is_green: isActuallyGreen,
+          current_test: session.current_test
+        });
+        if (session.diff) {
+          renderGitHubDiffView(session.diff);
+        }
+      } else if (session.state === 'COMPLETED' && session.pr_info) {
+        showPRSuccess(session.pr_info);
+      }
+    }
+
+    function updateProgressStatus(state, msg) {
+      const title = document.getElementById('statusTitle');
+      const detail = document.getElementById('statusDetail');
+
+      const STATE_LABELS = {
+        'INGESTING': { title: '1/15. Ingesting Repository Context', detail: 'Parsing issue metadata and establishing isolated sandbox' },
+        'CLONING': { title: '2/15. Cloning Repository', detail: 'Cloning repository at recorded commit hash' },
+        'INSPECTING_REPOSITORY': { title: '3/15. Inspecting Structure & Dependencies', detail: 'Detecting build system, lockfiles, and test commands' },
+        'PREPARING_ENVIRONMENT': { title: '4/15. Preparing Isolated Environment', detail: 'Installing dependencies in disposable isolated environment' },
+        'DISCOVERING_TESTS': { title: '5/15. Discovering Test Suite', detail: 'Running pytest --collect-only to verify test suite health' },
+        'REPRODUCING_ISSUE': { title: '6/15. Reproducing Issue (Confirming RED)', detail: 'Running baseline tests to verify the reported issue fails' },
+        'ANALYZING_ROOT_CAUSE': { title: '7/15. Ultra Planner Diagnosing Root Cause', detail: 'Analyzing AST symbols, imports, and stack trace' },
+        'GENERATING_PATCH': { title: '8/15. Nano Fixer Generating Patch', detail: 'Generating minimal code fix for the root cause' },
+        'APPLYING_PATCH': { title: '9/15. Applying Code Patch', detail: 'Applying edits to workspace sandbox' },
+        'RUNNING_TARGETED_TESTS': { title: '10/15. Running Targeted Tests', detail: 'Executing focused tests on modified code' },
+        'RUNNING_REGRESSION_TESTS': { title: '11/15. Running Regression Tests', detail: 'Verifying full test suite to prevent regressions' },
+        'VALIDATING_DIFF': { title: '12/15. Validating Diff Safety', detail: 'Checking code diff formatting and path security' },
+        'WAITING_FOR_APPROVAL': { title: '13/15. Awaiting Human Approval', detail: 'SafeFix paused at the Human Review Gate. Approve to publish PR.' },
+        'WAITING_FOR_REVIEW': { title: '13/15. Awaiting Human Approval', detail: 'SafeFix paused at the Human Review Gate. Approve to publish PR.' },
+        'PUBLISHING_PR': { title: '14/15. Creating Branch & Publishing PR', detail: 'Pushing changes to unique branch on GitHub' },
+        'COMPLETED': { title: '15/15. Pull Request Published!', detail: 'PR opened successfully and verified' },
+        'ENVIRONMENT_FAILED': { title: 'Environment Setup Blocked', detail: msg || 'Dependencies could not be resolved' },
+        'BASELINE_NOT_REPRODUCED': { title: 'Issue Not Reproduced', detail: 'Baseline tests passed; halting to prevent bad edits' },
+        'REPAIR_FAILED': { title: 'Repair Budget Exceeded', detail: 'Maximum patch iterations reached' },
+        'APPROVAL_REJECTED': { title: 'PR Rejected by User', detail: 'User rejected the patch' },
+        'ERROR': { title: 'Error Occurred', detail: msg || 'Unexpected execution error' }
+      };
+
+      if (STATE_LABELS[state]) {
+        title.textContent = STATE_LABELS[state].title;
+        detail.textContent = msg || STATE_LABELS[state].detail;
+      } else {
+        title.textContent = state;
+        detail.textContent = msg || '';
+      }
+
+      const TERMINAL_OR_REVIEW = ['WAITING_FOR_APPROVAL', 'WAITING_FOR_REVIEW', 'COMPLETED', 'ENVIRONMENT_FAILED', 'BASELINE_NOT_REPRODUCED', 'REPAIR_FAILED', 'APPROVAL_REJECTED', 'ERROR'];
+      if (TERMINAL_OR_REVIEW.includes(state)) {
+        document.getElementById('progressSection').classList.add('hidden');
+      } else {
+        document.getElementById('progressSection').classList.remove('hidden');
+      }
+    }
+
+    function updateScorecard(testData) {
+      const badge = document.getElementById('scorecardBadge');
+      if (testData.is_green) {
+        badge.className = "font-mono text-[11px] px-2.5 py-0.5 rounded font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40";
+        badge.innerHTML = `<i class="fa-solid fa-check mr-1"></i> GREEN: ${testData.passed_count || 0} passed (0 failed)`;
+      } else {
+        badge.className = "font-mono text-[11px] px-2.5 py-0.5 rounded font-bold bg-red-500/20 text-red-400 border border-red-500/40";
+        badge.innerHTML = `<i class="fa-solid fa-xmark mr-1"></i> RED: ${testData.failed_count || 0} failing`;
+      }
+    }
+
+    function appendRawTerminal(data) {
+      const raw = document.getElementById('rawTerminalOutput');
+      let text = "";
+      if (data.stdout) text += data.stdout;
+      if (data.stderr) text += "\n" + data.stderr;
+      raw.textContent = text;
+    }
+
+    function showReviewGate(data) {
+      document.getElementById('progressSection').classList.add('hidden');
+      const banner = document.getElementById('reviewGateBanner');
+      banner.classList.remove('hidden');
+
+      const badge = document.getElementById('reviewGateBadge');
+      const statsText = document.getElementById('reviewTestStatsText');
+      const title = document.getElementById('reviewGateTitle');
+      const sub = document.getElementById('reviewGateSubtext');
+
+      if (data.is_green) {
+        banner.className = "bg-emerald-950/40 border-2 border-emerald-500/60 rounded-xl p-5 shadow-2xl space-y-3";
+        if (badge) {
+          badge.className = "px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center space-x-1.5";
+          badge.innerHTML = `<i class="fa-solid fa-circle-check text-emerald-400"></i><span>Tests Verified GREEN</span>`;
+        }
+        if (statsText) {
+          statsText.className = "text-xs text-emerald-400 font-mono font-medium";
+          statsText.textContent = `Baseline RED turned GREEN in ${data.iterations || 1} iteration(s) (0 test failures)`;
+        }
+        if (title) title.textContent = "Review verified changes below before pushing to GitHub";
+        if (sub) sub.textContent = "SafeFix verified all tests pass. Click the button to approve and open the Pull Request.";
+      } else {
+        banner.className = "bg-amber-950/40 border-2 border-amber-500/60 rounded-xl p-5 shadow-2xl space-y-3";
+        if (badge) {
+          badge.className = "px-2.5 py-0.5 rounded-full text-[11px] font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center space-x-1.5";
+          badge.innerHTML = `<i class="fa-solid fa-code text-amber-400"></i><span>Code Fix Ready for Review</span>`;
+        }
+        if (statsText) {
+          statsText.className = "text-xs text-amber-400 font-mono font-medium";
+          statsText.textContent = `Autonomous fix generated in ${data.iterations || 1} iteration(s)`;
+        }
+        if (title) title.textContent = "Review the generated code changes below before pushing to GitHub";
+        if (sub) sub.textContent = "Review the patch in the Changes tab. Approve to open the Pull Request or request adjustments.";
+      }
+    }
+
+    // Parses raw unified diff text into GitHub-style file hunks with line numbers
+    function parseUnifiedDiff(diffText) {
+      const files = [];
+      let currentFile = null;
+      let currentHunk = null;
+      let oldLine = 0;
+      let newLine = 0;
+
+      const lines = diffText.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+
+        if (line.startsWith('diff --git')) {
+          const parts = line.split(' ');
+          const filePath = parts[parts.length - 1].replace(/^b\//, '');
+          currentFile = { file: filePath, hunks: [], additions: 0, deletions: 0 };
+          files.push(currentFile);
+        } else if (line.startsWith('+++ ') && !line.startsWith('+++ /dev/null')) {
+          const filePath = line.replace(/^\+\+\+\s+(?:b\/)?/, '').split('\t')[0].trim();
+          if (!currentFile || currentFile.file !== filePath) {
+            currentFile = { file: filePath, hunks: [], additions: 0, deletions: 0 };
+            files.push(currentFile);
+          }
+        } else if (line.startsWith('@@')) {
+          const match = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)/);
+          if (match) {
+            oldLine = parseInt(match[1], 10);
+            newLine = parseInt(match[2], 10);
+            currentHunk = { header: line, lines: [] };
+            if (!currentFile) {
+              currentFile = { file: 'changes.py', hunks: [], additions: 0, deletions: 0 };
+              files.push(currentFile);
+            }
+            currentFile.hunks.push(currentHunk);
+          }
+        } else if (currentHunk) {
+          if (line.startsWith('+') && !line.startsWith('+++')) {
+            currentHunk.lines.push({ type: 'add', oldNum: '', newNum: newLine++, text: line.slice(1) });
+            if (currentFile) currentFile.additions++;
+          } else if (line.startsWith('-') && !line.startsWith('---')) {
+            currentHunk.lines.push({ type: 'del', oldNum: oldLine++, newNum: '', text: line.slice(1) });
+            if (currentFile) currentFile.deletions++;
+          } else if (!line.startsWith('---') && !line.startsWith('+++')) {
+            currentHunk.lines.push({ type: 'context', oldNum: oldLine++, newNum: newLine++, text: line.startsWith(' ') ? line.slice(1) : line });
+          }
+        }
+      }
+      return files;
+    }
+
+    // Renders the exact GitHub PR Changes View (Files Changed)
+    function renderGitHubDiffView(diffData) {
+      if (!diffData || !diffData.diff_text) {
+        if (diffData && diffData.files_changed && diffData.files_changed.length > 0) {
+          document.getElementById('diffFilesCountBadge').textContent = `${diffData.files_changed.length} file(s) changed`;
+          const wrapper = document.getElementById('diffCardsWrapper');
+          wrapper.innerHTML = `
+            <div class="border border-gh-border rounded-lg p-4 bg-gh-header/30 text-xs">
+              <span class="font-bold text-white">Files modified:</span>
+              <ul class="list-disc list-inside mt-2 text-slate-300 font-mono">
+                ${diffData.files_changed.map(f => `<li>${escapeHtml(f)}</li>`).join('')}
+              </ul>
+            </div>
+          `;
+        }
+        return;
+      }
+
+      const files = parseUnifiedDiff(diffData.diff_text);
+      const wrapper = document.getElementById('diffCardsWrapper');
+      wrapper.innerHTML = '';
+
+      const count = (diffData.files_changed && diffData.files_changed.length) ? diffData.files_changed.length : (files.length || 1);
+      document.getElementById('diffFilesCountBadge').textContent = `${count} file(s) changed`;
+      document.getElementById('diffAdditions').textContent = `+${diffData.additions || 0}`;
+      document.getElementById('diffDeletions').textContent = `-${diffData.deletions || 0}`;
+
+      if (files.length === 0) {
+        // Fallback for simple diffs
+        const card = document.createElement('div');
+        card.className = "border border-gh-border rounded-lg overflow-hidden";
+        card.innerHTML = `
+          <div class="bg-gh-header px-4 py-2 text-xs font-mono font-bold text-slate-200 border-b border-gh-border">
+            ${diffData.files_changed.join(', ') || 'Changes'}
+          </div>
+          <pre class="p-4 text-xs font-mono bg-gh-bg whitespace-pre-wrap">${diffData.diff_text}</pre>
+        `;
+        wrapper.appendChild(card);
+        return;
+      }
+
+      files.forEach(f => {
+        const fileCard = document.createElement('div');
+        fileCard.className = "border border-gh-border rounded-lg overflow-hidden bg-gh-bg";
+
+        // File Header Bar (Like GitHub)
+        const header = document.createElement('div');
+        header.className = "bg-gh-header border-b border-gh-border px-4 py-2.5 flex items-center justify-between text-xs";
+        header.innerHTML = `
+          <div class="flex items-center space-x-2">
+            <i class="fa-regular fa-file-code text-gh-muted"></i>
+            <span class="font-mono font-bold text-white">${f.file}</span>
+          </div>
+          <div class="flex items-center space-x-2 font-mono text-[11px]">
+            <span class="text-emerald-400 font-bold">+${f.additions}</span>
+            <span class="text-red-400 font-bold">-${f.deletions}</span>
+          </div>
+        `;
+        fileCard.appendChild(header);
+
+        // GitHub Diff Table
+        const table = document.createElement('table');
+        table.className = "gh-diff-table";
+        const tbody = document.createElement('tbody');
+
+        f.hunks.forEach(hunk => {
+          // Hunk Row
+          const hunkRow = document.createElement('tr');
+          hunkRow.className = "gh-hunk-row";
+          hunkRow.innerHTML = `
+            <td class="gh-line-num">...</td>
+            <td class="gh-line-num">...</td>
+            <td class="gh-sign"></td>
+            <td class="font-mono text-xs">${escapeHtml(hunk.header)}</td>
+          `;
+          tbody.appendChild(hunkRow);
+
+          // Lines
+          hunk.lines.forEach(l => {
+            const row = document.createElement('tr');
+            let sign = ' ';
+            if (l.type === 'add') {
+              row.className = "gh-add-row";
+              sign = '+';
+            } else if (l.type === 'del') {
+              row.className = "gh-del-row";
+              sign = '-';
+            }
+
+            row.innerHTML = `
+              <td class="gh-line-num">${l.oldNum !== '' ? l.oldNum : ''}</td>
+              <td class="gh-line-num">${l.newNum !== '' ? l.newNum : ''}</td>
+              <td class="gh-sign font-mono">${sign}</td>
+              <td>${escapeHtml(l.text)}</td>
+            `;
+            tbody.appendChild(row);
+          });
+        });
+
+        table.appendChild(tbody);
+        fileCard.appendChild(table);
+        wrapper.appendChild(fileCard);
+      });
+    }
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    async function retryCurrentSetup() {
+      const issueUrl = document.getElementById('issueUrlInput').value.trim();
+      if (!issueUrl) return;
+      await startFixJob({ issue_url: issueUrl });
+    }
+
+    async function approveChanges() {
+      if (!currentSessionId) return;
+
+      const btn = document.getElementById('approveBtn');
+      btn.disabled = true;
+      btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> <span>Creating Pull Request...</span>`;
+
+      try {
+        const res = await fetch(`/api/approve/${currentSessionId}`, { method: 'POST' });
+        if (!res.ok) throw new Error('Approval request failed');
+        document.getElementById('reviewGateBanner').classList.add('hidden');
+      } catch (err) {
+        alert("Approval failed: " + err.message);
+        btn.disabled = false;
+        btn.innerHTML = `<i class="fa-solid fa-check"></i> <span>Approve & Open GitHub PR</span>`;
+      }
+    }
+
+    async function submitAdjustment() {
+      const feedback = document.getElementById('adjustFeedbackInput').value.trim();
+      if (!feedback || !currentSessionId) return;
+
+      try {
+        await fetch(`/api/adjust/${currentSessionId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ feedback })
+        });
+        closeAdjustModal();
+        document.getElementById('statusTitle').textContent = "Regenerating fix based on feedback...";
+        document.getElementById('progressSection').classList.remove('hidden');
+      } catch (err) {
+        alert("Failed to submit feedback: " + err.message);
+      }
+    }
+
+    function showPRSuccess(pr) {
+      document.getElementById('progressSection').classList.add('hidden');
+      document.getElementById('reviewGateBanner').classList.add('hidden');
+
+      const card = document.getElementById('prSuccessCard');
+      card.classList.remove('hidden');
+
+      document.getElementById('prBranchBadge').textContent = `branch: ${pr.branch}`;
+      document.getElementById('prTitleText').textContent = pr.message || 'Pull Request Successfully Opened!';
+      document.getElementById('prMessageText').textContent = pr.simulated 
+        ? "This is a local demo. No GitHub PR was created. Download the tested patch from the review section." 
+        : `PR #${pr.pr_number} is live on GitHub and ready for review.`;
+
+      const prLink = document.getElementById('viewPrLink');
+      prLink.hidden = !!pr.simulated || !pr.pr_url;
+      if (!prLink.hidden) prLink.href = pr.pr_url;
+    }
+  </script>
+</body>
+</html>
